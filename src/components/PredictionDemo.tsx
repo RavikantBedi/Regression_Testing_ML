@@ -1,68 +1,95 @@
 import { useState, useMemo } from "react";
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, ComposedChart } from "recharts";
-import { sampleDataset, linearRegression, predict, featureNames } from "@/lib/regression";
+import { ComposedChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from "recharts";
+import { sampleDataset, linearRegression, predict, featureNames, DataPoint } from "@/lib/regression";
 import { TrendingUp } from "lucide-react";
+import DatasetUpload from "@/components/DatasetUpload";
+
+interface UploadedDataset {
+  data: DataPoint[];
+  headers: { x: string; y: string };
+  fileName: string;
+}
 
 const PredictionDemo = () => {
-  const [inputArea, setInputArea] = useState<string>("2000");
+  const [inputValue, setInputValue] = useState<string>("");
   const [predicted, setPredicted] = useState<number | null>(null);
+  const [uploadedDataset, setUploadedDataset] = useState<UploadedDataset | null>(null);
 
-  const result = useMemo(() => linearRegression(sampleDataset), []);
+  const activeData = uploadedDataset?.data ?? sampleDataset;
+  const activeHeaders = uploadedDataset?.headers ?? { x: featureNames.x, y: featureNames.y };
+
+  const result = useMemo(() => linearRegression(activeData), [activeData]);
 
   const chartData = useMemo(() => {
-    const minX = Math.min(...sampleDataset.map(d => d.x));
-    const maxX = Math.max(...sampleDataset.map(d => d.x));
-    const lineData = [
-      { x: minX, line: predict(result.slope, result.intercept, minX) },
-      { x: maxX, line: predict(result.slope, result.intercept, maxX) },
-    ];
-    return { scatter: sampleDataset, line: lineData };
-  }, [result]);
+    const minX = Math.min(...activeData.map(d => d.x));
+    const maxX = Math.max(...activeData.map(d => d.x));
+    return {
+      scatter: activeData,
+      line: [
+        { x: minX, line: predict(result.slope, result.intercept, minX) },
+        { x: maxX, line: predict(result.slope, result.intercept, maxX) },
+      ],
+    };
+  }, [activeData, result]);
 
   const handlePredict = () => {
-    const area = parseFloat(inputArea);
-    if (!isNaN(area) && area > 0) {
-      setPredicted(predict(result.slope, result.intercept, area));
+    const val = parseFloat(inputValue);
+    if (!isNaN(val)) {
+      setPredicted(predict(result.slope, result.intercept, val));
     }
+  };
+
+  const handleDatasetLoaded = (ds: UploadedDataset) => {
+    setUploadedDataset(ds);
+    setPredicted(null);
+    setInputValue("");
+  };
+
+  const handleClear = () => {
+    setUploadedDataset(null);
+    setPredicted(null);
+    setInputValue("");
   };
 
   return (
     <section id="prediction" className="py-20">
       <div className="container max-w-5xl">
         <p className="text-sm font-medium text-accent mb-3 tracking-wide uppercase">Interactive Demo</p>
-        <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">Predict House Price</h2>
-        <p className="text-muted-foreground text-lg mb-12 max-w-2xl">
-          Enter the house area in square feet and the trained model will predict the estimated price instantly.
+        <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">Upload & Predict</h2>
+        <p className="text-muted-foreground text-lg mb-10 max-w-2xl">
+          Upload your own CSV dataset or use the sample data. The model trains instantly in your browser.
         </p>
+
+        {/* Upload */}
+        <div className="mb-10 max-w-xl">
+          <DatasetUpload onDatasetLoaded={handleDatasetLoaded} currentDataset={uploadedDataset} onClear={handleClear} />
+        </div>
 
         <div className="grid lg:grid-cols-5 gap-8">
           {/* Input Panel */}
           <div className="lg:col-span-2 space-y-6">
             <div className="rounded-xl border border-border bg-card p-6">
-              <label className="block text-sm font-medium mb-2">{featureNames.x}</label>
+              <label className="block text-sm font-medium mb-2">{activeHeaders.x}</label>
               <input
                 type="number"
-                value={inputArea}
-                onChange={(e) => setInputArea(e.target.value)}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
                 className="w-full rounded-lg border border-input bg-background px-4 py-3 text-lg font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="e.g. 2000"
+                placeholder={`Enter ${activeHeaders.x}`}
               />
               <button
                 onClick={handlePredict}
                 className="mt-4 w-full rounded-lg bg-primary text-primary-foreground py-3 font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
               >
                 <TrendingUp className="h-4 w-4" />
-                Predict Price
+                Predict {activeHeaders.y}
               </button>
 
               {predicted !== null && (
                 <div className="mt-6 rounded-lg border-2 border-accent bg-accent/10 p-5 text-center">
-                  <p className="text-sm text-muted-foreground mb-1">Predicted Price</p>
+                  <p className="text-sm text-muted-foreground mb-1">Predicted {activeHeaders.y}</p>
                   <p className="font-display text-4xl font-bold text-gradient">
-                    ${predicted.toFixed(1)}k
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    ≈ ${(predicted * 1000).toLocaleString()}
+                    {predicted.toFixed(2)}
                   </p>
                 </div>
               )}
@@ -77,6 +104,7 @@ const PredictionDemo = () => {
                 { label: "Intercept (c)", value: result.intercept.toFixed(2) },
                 { label: "MSE", value: result.mse.toFixed(2) },
                 { label: "MAE", value: result.mae.toFixed(2) },
+                { label: "Data Points", value: activeData.length.toString() },
               ].map((m) => (
                 <div key={m.label} className="flex justify-between text-sm">
                   <span className="text-muted-foreground">{m.label}</span>
@@ -96,14 +124,14 @@ const PredictionDemo = () => {
                   <XAxis
                     dataKey="x"
                     type="number"
-                    domain={['dataMin - 100', 'dataMax + 100']}
-                    label={{ value: featureNames.x, position: "bottom", offset: 0, style: { fontSize: 12 } }}
+                    domain={["dataMin - 100", "dataMax + 100"]}
+                    label={{ value: activeHeaders.x, position: "bottom", offset: 0, style: { fontSize: 12 } }}
                     tick={{ fontSize: 11 }}
                   />
                   <YAxis
                     dataKey="y"
                     type="number"
-                    label={{ value: featureNames.y, angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 12 } }}
+                    label={{ value: activeHeaders.y, angle: -90, position: "insideLeft", offset: 10, style: { fontSize: 12 } }}
                     tick={{ fontSize: 11 }}
                   />
                   <Tooltip
@@ -115,19 +143,11 @@ const PredictionDemo = () => {
                     }}
                   />
                   <Scatter name="Data Points" data={chartData.scatter} fill="hsl(var(--primary))" r={5} />
-                  <Line
-                    data={chartData.line}
-                    dataKey="line"
-                    stroke="hsl(var(--accent))"
-                    strokeWidth={3}
-                    dot={false}
-                    type="linear"
-                    name="Regression Line"
-                  />
-                  {predicted !== null && (
+                  <Line data={chartData.line} dataKey="line" stroke="hsl(var(--accent))" strokeWidth={3} dot={false} type="linear" name="Regression Line" />
+                  {predicted !== null && inputValue && (
                     <Scatter
                       name="Your Prediction"
-                      data={[{ x: parseFloat(inputArea), y: predicted }]}
+                      data={[{ x: parseFloat(inputValue), y: predicted }]}
                       fill="hsl(var(--destructive))"
                       r={8}
                       shape="diamond"
